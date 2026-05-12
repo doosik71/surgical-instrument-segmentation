@@ -9,6 +9,7 @@ import cv2
 
 from app.config.settings import AppSettings
 from app.domain.models import FrameInput, MediaKind, ProcessedFrame, VideoStreamInfo
+from app.services.geometry import resize_with_padding
 from app.services.segmentation.monai_segmenter import MonaiToolSegmenter
 from app.services.tracking import SimpleToolTracker
 
@@ -33,7 +34,12 @@ class VideoPipelineSession:
         if not ok or frame_bgr is None:
             return None
 
-        image_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        original_size = frame_bgr.shape[:2]  # (H, W)
+        
+        # Performance Optimization: Resize and pad to segmenter's input size (H, W)
+        processed_bgr, scale, pad = resize_with_padding(frame_bgr, self.segmenter.input_size)
+        image_rgb = cv2.cvtColor(processed_bgr, cv2.COLOR_BGR2RGB)
+
         timestamp = None
         if self.stream_info.fps > 0:
             timestamp = self.current_frame_index / self.stream_info.fps
@@ -42,10 +48,17 @@ class VideoPipelineSession:
             kind=MediaKind.VIDEO,
             source_path=self.stream_info.source_path,
             image_rgb=image_rgb,
+            original_image_size=original_size,
+            processing_metadata=(scale, pad),
             frame_index=self.current_frame_index,
             timestamp_seconds=timestamp,
         )
-        result = self.segmenter.analyze_image(image_rgb)
+        
+        result = self.segmenter.analyze_image(
+            image_rgb, 
+            original_image_size=original_size, 
+            mapping=(scale, pad)
+        )
         result.tools = self.tracker.update(result.tools)
         processed = ProcessedFrame(frame=frame, result=result)
 

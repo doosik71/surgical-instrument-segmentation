@@ -487,7 +487,8 @@ class MainWindow(QMainWindow):
 
         lines.extend(
             [
-                f"Image size: {result.image_size}",
+                f"Image size (proc): {result.image_size}",
+                f"Image size (orig): {result.original_image_size}",
                 f"Contours: {len(result.contours)}",
                 f"Detected tools: {len(result.tools)}",
             ]

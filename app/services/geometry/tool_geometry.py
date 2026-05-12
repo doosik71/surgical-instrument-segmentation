@@ -101,15 +101,66 @@ def select_tip(axis_start: Point, axis_end: Point, image_size: tuple[int, int]) 
     return int(selected[0]), int(selected[1])
 
 
+def resize_with_padding(
+    image: np.ndarray,
+    target_size: tuple[int, int],
+) -> tuple[np.ndarray, float, tuple[int, int]]:
+    """Resize image to target_size (H, W) maintaining aspect ratio with black padding."""
+    target_h, target_w = target_size
+    orig_h, orig_w = image.shape[:2]
+
+    scale = min(target_w / orig_w, target_h / orig_h)
+    new_w = int(orig_w * scale)
+    new_h = int(orig_h * scale)
+
+    resized = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+    pad_w = (target_w - new_w) // 2
+    pad_h = (target_h - new_h) // 2
+
+    padded = np.zeros((target_h, target_w, 3), dtype=np.uint8)
+    padded[pad_h : pad_h + new_h, pad_w : pad_w + new_w] = resized
+
+    return padded, scale, (pad_w, pad_h)
+
+
+def map_point_to_original(point: Point, scale: float, pad: tuple[int, int]) -> Point:
+    """Map a point from processed space back to original space."""
+    x = int((point[0] - pad[0]) / scale)
+    y = int((point[1] - pad[1]) / scale)
+    return x, y
+
+
 def build_tool_geometry(
     contour: np.ndarray,
     contour_index: int,
     image_size: tuple[int, int],
+    mapping: tuple[float, tuple[int, int]] | None = None,
 ) -> ToolGeometry:
-    """Create a tool-geometry object from one contour."""
+    """Create a tool-geometry object from one contour, optionally mapping to original space."""
     center, axis_start, axis_end = axis_endpoints(contour)
     tip = select_tip(axis_start, axis_end, image_size=image_size)
     bounding_box = cv2.boundingRect(contour)
+
+    if mapping:
+        scale, pad = mapping
+        center = map_point_to_original(center, scale, pad)
+        axis_start = map_point_to_original(axis_start, scale, pad)
+        axis_end = map_point_to_original(axis_end, scale, pad)
+        tip = map_point_to_original(tip, scale, pad)
+
+        # Map bounding box: [x, y, w, h]
+        orig_x, orig_y = map_point_to_original((bounding_box[0], bounding_box[1]), scale, pad)
+        orig_x2, orig_y2 = map_point_to_original(
+            (bounding_box[0] + bounding_box[2], bounding_box[1] + bounding_box[3]), scale, pad
+        )
+        bounding_box = (orig_x, orig_y, orig_x2 - orig_x, orig_y2 - orig_y)
+
+        # Map contour points
+        mapped_contour = contour.copy().astype(np.float32)
+        mapped_contour[:, 0, 0] = (mapped_contour[:, 0, 0] - pad[0]) / scale
+        mapped_contour[:, 0, 1] = (mapped_contour[:, 0, 1] - pad[1]) / scale
+        contour = mapped_contour.astype(np.int32)
 
     return ToolGeometry(
         contour_index=contour_index,
@@ -123,10 +174,19 @@ def build_tool_geometry(
     )
 
 
-def extract_tool_geometries(contours: list[np.ndarray], image_size: tuple[int, int]) -> list[ToolGeometry]:
+def extract_tool_geometries(
+    contours: list[np.ndarray],
+    image_size: tuple[int, int],
+    mapping: tuple[float, tuple[int, int]] | None = None,
+) -> list[ToolGeometry]:
     """Convert contours into structured tool geometries."""
     return [
-        build_tool_geometry(contour=contour, contour_index=index, image_size=image_size)
+        build_tool_geometry(
+            contour=contour,
+            contour_index=index,
+            image_size=image_size,
+            mapping=mapping,
+        )
         for index, contour in enumerate(contours)
     ]
 
@@ -134,6 +194,8 @@ def extract_tool_geometries(contours: list[np.ndarray], image_size: tuple[int, i
 def extract_tool_geometries_from_mask(
     mask: np.ndarray,
     image_size: tuple[int, int] | None = None,
+    original_image_size: tuple[int, int] | None = None,
+    mapping: tuple[float, tuple[int, int]] | None = None,
     kernel_size: int = 5,
     min_component_area: int = 400,
     min_contour_area: int = 400,
@@ -146,11 +208,28 @@ def extract_tool_geometries_from_mask(
     )
     resolved_image_size = image_size or cleaned_mask.shape[:2]
     contours = extract_contours(cleaned_mask, min_contour_area=min_contour_area)
-    tools = extract_tool_geometries(contours=contours, image_size=resolved_image_size)
+    
+    # Map FrameResult contours to original space if mapping is provided
+    result_contours = contours
+    if mapping:
+        scale, pad = mapping
+        result_contours = []
+        for cnt in contours:
+            mapped_cnt = cnt.copy().astype(np.float32)
+            mapped_cnt[:, 0, 0] = (mapped_cnt[:, 0, 0] - pad[0]) / scale
+            mapped_cnt[:, 0, 1] = (mapped_cnt[:, 0, 1] - pad[1]) / scale
+            result_contours.append(mapped_cnt.astype(np.int32))
+
+    tools = extract_tool_geometries(
+        contours=contours,
+        image_size=resolved_image_size,
+        mapping=mapping,
+    )
 
     return FrameResult(
         image_size=resolved_image_size,
+        original_image_size=original_image_size or resolved_image_size,
         mask=(cleaned_mask > 0).astype(np.uint8),
-        contours=contours,
+        contours=result_contours,
         tools=tools,
     )

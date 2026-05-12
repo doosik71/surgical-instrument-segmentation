@@ -123,26 +123,49 @@ class MonaiToolSegmenter:
         normalized_image = self._normalize_image(image)
         image_height, image_width = normalized_image.shape[:2]
 
-        input_tensor = self.transform(self._pil_image_cls.fromarray(normalized_image)).unsqueeze(0).to(self.device)
+        # Use the provided image directly if it matches input_size, otherwise transform
+        if (image_height, image_width) == self.input_size:
+            import torch
+            input_tensor = (
+                torch.from_numpy(normalized_image.transpose(2, 0, 1))
+                .float()
+                .div(255.0)
+                .unsqueeze(0)
+                .to(self.device)
+            )
+        else:
+            input_tensor = self.transform(self._pil_image_cls.fromarray(normalized_image)).unsqueeze(0).to(self.device)
 
         with self.torch.no_grad():
             output_tensor = self.model(input_tensor)
             probabilities = self.torch.softmax(output_tensor, dim=1)
             foreground = probabilities[:, 1, :, :]
 
-        resized_mask = cv2.resize(
-            foreground[0].detach().cpu().numpy(),
-            (image_width, image_height),
-            interpolation=cv2.INTER_LINEAR,
-        )
-        return (resized_mask >= self.mask_threshold).astype(np.uint8)
+        mask_tensor = foreground[0].detach().cpu().numpy()
 
-    def analyze_image(self, image: np.ndarray) -> FrameResult:
+        # Only resize back if the input image was NOT already at the target size
+        if (image_height, image_width) != self.input_size:
+            mask_tensor = cv2.resize(
+                mask_tensor,
+                (image_width, image_height),
+                interpolation=cv2.INTER_LINEAR,
+            )
+
+        return (mask_tensor >= self.mask_threshold).astype(np.uint8)
+
+    def analyze_image(
+        self,
+        image: np.ndarray,
+        original_image_size: tuple[int, int] | None = None,
+        mapping: tuple[float, tuple[int, int]] | None = None,
+    ) -> FrameResult:
         """Run segmentation and contour-based geometry extraction on one image."""
         binary_mask = self.segment_mask(image)
         return extract_tool_geometries_from_mask(
             mask=binary_mask,
             image_size=image.shape[:2],
+            original_image_size=original_image_size,
+            mapping=mapping,
             min_component_area=self.min_component_area,
             min_contour_area=self.min_contour_area,
         )

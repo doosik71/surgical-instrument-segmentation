@@ -41,6 +41,7 @@ class FrameResult:
     """Processing result for one frame or one still image."""
 
     image_size: tuple[int, int] | None = None
+    original_image_size: tuple[int, int] | None = None
     mask: np.ndarray | None = None
     contours: list[np.ndarray] = field(default_factory=list)
     tools: list[ToolGeometry] = field(default_factory=list)
@@ -54,6 +55,8 @@ class FrameInput:
     kind: MediaKind
     source_path: Path
     image_rgb: np.ndarray
+    original_image_size: tuple[int, int] | None = None
+    processing_metadata: tuple[float, tuple[int, int]] | None = None  # (scale, pad)
     frame_index: int = 0
     timestamp_seconds: float | None = None
     sequence_index: int | None = None
