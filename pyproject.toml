@@ -1,0 +1,49 @@
+[project]
+name = "surgical-instrument-segmentation"
+version = "0.1.0"
+description = "GPU-first surgical instrument segmentation and tip tracking application"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "huggingface-hub>=0.32.0",
+  "monai>=1.4.0",
+  "numpy>=1.26.4,<2.0.0",
+  "opencv-python>=4.10.0.84",
+  "pillow>=10.4.0",
+  "pydantic>=2.9.0",
+  "pyqt6>=6.7.1",
+  "python-dotenv>=1.0.1",
+  "scipy>=1.14.1",
+  "torch==2.6.0+cu118; sys_platform == 'win32' or sys_platform == 'linux'",
+  "torchvision==0.21.0+cu118; sys_platform == 'win32' or sys_platform == 'linux'",
+]
+
+[project.optional-dependencies]
+dev = [
+  "black>=24.10.0",
+  "mypy>=1.11.2",
+  "pytest>=8.3.3",
+  "pytest-qt>=4.4.0",
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cu118", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+]
+torchvision = [
+  { index = "pytorch-cu118", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu118"
+url = "https://download.pytorch.org/whl/cu118"
+explicit = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
