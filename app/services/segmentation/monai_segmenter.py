@@ -153,6 +153,25 @@ class MonaiToolSegmenter:
 
         return (mask_tensor >= self.mask_threshold).astype(np.uint8)
 
+    def predict_foreground_batch(self, images: "torch.Tensor") -> "torch.Tensor":
+        """Predict foreground probabilities for a batch of normalized RGB tensors."""
+        self._ensure_loaded()
+
+        if images.ndim != 4:
+            raise ValueError("Expected images with shape (B, C, H, W)")
+        if images.shape[1] != 3:
+            raise ValueError("Expected 3 RGB channels")
+        if tuple(images.shape[-2:]) != self.input_size:
+            raise ValueError(
+                f"Expected spatial size {self.input_size}, got {tuple(images.shape[-2:])}"
+            )
+
+        input_tensor = images.to(device=self.device, dtype=self.torch.float32, non_blocking=True)
+        with self.torch.no_grad():
+            output_tensor = self.model(input_tensor)
+            probabilities = self.torch.softmax(output_tensor, dim=1)
+        return probabilities[:, 1, :, :]
+
     def analyze_image(
         self,
         image: np.ndarray,

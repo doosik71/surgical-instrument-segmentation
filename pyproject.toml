@@ -16,6 +16,7 @@ dependencies = [
   "scipy>=1.14.1",
   "torch==2.6.0+cu118; sys_platform == 'win32' or sys_platform == 'linux'",
   "torchvision==0.21.0+cu118; sys_platform == 'win32' or sys_platform == 'linux'",
+  "tqdm>=4.67.3",
 ]
 
 [project.optional-dependencies]

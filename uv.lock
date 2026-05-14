@@ -1122,6 +1122,7 @@ dependencies = [
     { name = "scipy" },
     { name = "torch", version = "2.6.0+cu118", source = { registry = "https://download.pytorch.org/whl/cu118" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
     { name = "torchvision", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "tqdm" },
 ]
 
 [package.optional-dependencies]
@@ -1149,6 +1150,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.14.1" },
     { name = "torch", marker = "sys_platform == 'linux' or sys_platform == 'win32'", specifier = "==2.6.0+cu118", index = "https://download.pytorch.org/whl/cu118" },
     { name = "torchvision", marker = "sys_platform == 'linux' or sys_platform == 'win32'", specifier = "==0.21.0+cu118", index = "https://download.pytorch.org/whl/cu118" },
+    { name = "tqdm", specifier = ">=4.67.3" },
 ]
 provides-extras = ["dev"]
 
