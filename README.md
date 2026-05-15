@@ -269,6 +269,44 @@ tensorrt_fp16          2.991       2.991      334.30
 tensorrt_int8          2.238       2.238      446.83
 ```
 
+### Detect tip from the command line
+
+Use `scripts.detect_tip` when you want the fastest non-GUI tip detection path for one image or one video.
+
+Image example:
+
+```bat
+.\.venv\Scripts\python.exe -m scripts.detect_tip --model data/model/models/model.pt --image data/image/val/VID23_t50_full/img_dir/t50_VID23_000000.png
+```
+
+Image folder example:
+
+```bat
+.\.venv\Scripts\python.exe -m scripts.detect_tip --model data/model/models/model.pt --image data/image/val/VID23_t50_full/img_dir
+```
+
+Video example:
+
+```bat
+.\.venv\Scripts\python.exe -m scripts.detect_tip --model data/model/models/model-fp16.trt --video data/video01.mp4
+```
+
+The script writes JSONL to stdout. Each line is one JSON object with an `event` field.
+
+- `model_loaded`: model runtime, model path, and load time
+- `image_result`: original-scale tip coordinates and processing time for one image
+- `image_folder_summary`: total processed image count and total elapsed time for one image folder
+- `video_frame`: original-scale tip coordinates and per-frame FPS
+- `video_summary`: total FPS and total elapsed time after the last frame
+
+Example JSONL output:
+
+```json
+{"event":"model_loaded","runtime":"trt","model_path":"data/model/models/model-fp16.trt","load_time_ms":72.418}
+{"event":"video_frame","input_path":"data/video01.mp4","frame_index":0,"timestamp_s":0.0,"fps":331.274,"tools":[{"contour_index":0,"track_id":1,"tip":[553,271],"center":[468,258],"bounding_box":[377,209,193,84]}]}
+{"event":"video_summary","input_path":"data/video01.mp4","frames":240,"total_time_s":0.861,"total_fps":278.746}
+```
+
 ## GUI Overview
 
 ### Still Images tab
