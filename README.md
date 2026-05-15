@@ -273,38 +273,57 @@ tensorrt_int8          2.238       2.238      446.83
 
 Use `scripts.detect_tip` when you want the fastest non-GUI tip detection path for one image or one video.
 
-Image example:
+### Execution Examples
+
+#### Single Image
 
 ```bat
 .\.venv\Scripts\python.exe -m scripts.detect_tip --model data/model/models/model.pt --image data/image/val/VID23_t50_full/img_dir/t50_VID23_000000.png
 ```
 
-Image folder example:
+Output:
+
+```json
+{"event": "model_loaded", "runtime": "pt", "model_path": "data\\model\\models\\model.pt", "load_time_ms": 2180.898}
+{"event": "image_result", "input_path": "data\\image\\val\\VID23_t50_full\\img_dir\\t50_VID23_000000.png", "processing_time_ms": 234.612, "tools": [{"contour_index": 0, "track_id": null, "tip": [382, 259], "center": [249, 244], "bounding_box": [135, 197, 249, 95]}]}
+```
+
+#### Image Folder
 
 ```bat
 .\.venv\Scripts\python.exe -m scripts.detect_tip --model data/model/models/model.pt --image data/image/val/VID23_t50_full/img_dir
 ```
 
-Video example:
+Output:
+
+```json
+{"event": "model_loaded", "runtime": "pt", "model_path": "data\\model\\models\\model.pt", "load_time_ms": 2145.177}
+{"event": "image_result", "input_path": "data\\image\\val\\VID23_t50_full\\img_dir\\t50_VID23_000000.png", "processing_time_ms": 237.719, "tools": [{"contour_index": 0, "track_id": null, "tip": [382, 259], "center": [249, 244], "bounding_box": [135, 197, 249, 95]}]}
+{"event": "image_result", "input_path": "data\\image\\val\\VID23_t50_full\\img_dir\\t50_VID23_000001.png", "processing_time_ms": 23.867, "tools": [{"contour_index": 0, "track_id": null, "tip": [385, 272], "center": [250, 262], "bounding_box": [135, 212, 251, 95]}]}
+{"event": "image_result", "input_path": "data\\image\\val\\VID23_t50_full\\img_dir\\t50_VID23_000002.png", "processing_time_ms": 21.675, "tools": [{"contour_index": 0, "track_id": null, "tip": [346, 316], "center": [237, 307], "bounding_box": [139, 259, 209, 98]}, {"contour_index": 1, "track_id": null, "tip": [480, 37], "center": [534, 16], "bounding_box": [479, 2, 123, 38]}]}
+{"event": "image_result", "input_path": "data\\image\\val\\VID23_t50_full\\img_dir\\t50_VID23_000003.png", "processing_time_ms": 21.114, "tools": [{"contour_index": 0, "track_id": null, "tip": [334, 326], "center": [234, 324], "bounding_box": [141, 272, 194, 107]}, {"contour_index": 1, "track_id": null, "tip": [534, 23], "center": [569, 13], "bounding_box": [534, 2, 86, 31]}]}
+{"event": "image_result", "input_path": "data\\image\\val\\VID23_t50_full\\img_dir\\t50_VID23_000004.png", "processing_time_ms": 22.766, "tools": [{"contour_index": 0, "track_id": null, "tip": [350, 336], "center": [249, 348], "bounding_box": [152, 305, 199, 95]}]}
+{"event": "image_result", "input_path": "data\\image\\val\\VID23_t50_full\\img_dir\\t50_VID23_000005.png", "processing_time_ms": 21.867, "tools": [{"contour_index": 0, "track_id": null, "tip": [348, 350], "center": [247, 350], "bounding_box": [149, 306, 200, 93]}, {"contour_index": 1, "track_id": null, "tip": [447, 44], "center": [511, 20], "bounding_box": [447, 2, 138, 49]}]}
+...
+```
+
+#### Video
 
 ```bat
 .\.venv\Scripts\python.exe -m scripts.detect_tip --model data/model/models/model-fp16.trt --video data/video01.mp4
 ```
 
-The script writes JSONL to stdout. Each line is one JSON object with an `event` field.
-
-- `model_loaded`: model runtime, model path, and load time
-- `image_result`: original-scale tip coordinates and processing time for one image
-- `image_folder_summary`: total processed image count and total elapsed time for one image folder
-- `video_frame`: original-scale tip coordinates and per-frame FPS
-- `video_summary`: total FPS and total elapsed time after the last frame
-
-Example JSONL output:
+Output:
 
 ```json
-{"event":"model_loaded","runtime":"trt","model_path":"data/model/models/model-fp16.trt","load_time_ms":72.418}
-{"event":"video_frame","input_path":"data/video01.mp4","frame_index":0,"timestamp_s":0.0,"fps":331.274,"tools":[{"contour_index":0,"track_id":1,"tip":[553,271],"center":[468,258],"bounding_box":[377,209,193,84]}]}
-{"event":"video_summary","input_path":"data/video01.mp4","frames":240,"total_time_s":0.861,"total_fps":278.746}
+{"event": "model_loaded", "runtime": "trt", "model_path": "data\\model\\models\\model-fp16.trt", "load_time_ms": 188.2}
+{"event": "video_frame", "input_path": "data\\video01.mp4", "frame_index": 0, "timestamp_s": 0.0, "fps": 9.415, "tools": [{"contour_index": 0, "track_id": 1, "tip": [394, 66], "center": [437, 29], "bounding_box": [394, 2, 92, 65]}]}
+{"event": "video_frame", "input_path": "data\\video01.mp4", "frame_index": 1, "timestamp_s": 0.04, "fps": 90.063, "tools": [{"contour_index": 0, "track_id": 1, "tip": [391, 69], "center": [437, 30], "bounding_box": [391, 2, 100, 68]}]}
+{"event": "video_frame", "input_path": "data\\video01.mp4", "frame_index": 2, "timestamp_s": 0.08, "fps": 90.229, "tools": [{"contour_index": 0, "track_id": 1, "tip": [386, 74], "center": [437, 31], "bounding_box": [386, 2, 109, 73]}]}
+{"event": "video_frame", "input_path": "data\\video01.mp4", "frame_index": 3, "timestamp_s": 0.12, "fps": 94.047, "tools": [{"contour_index": 0, "track_id": 1, "tip": [381, 77], "center": [433, 32], "bounding_box": [381, 2, 112, 76]}]}
+{"event": "video_frame", "input_path": "data\\video01.mp4", "frame_index": 4, "timestamp_s": 0.16, "fps": 93.522, "tools": [{"contour_index": 0, "track_id": 1, "tip": [372, 80], "center": [424, 33], "bounding_box": [372, 2, 111, 79]}]}
+{"event": "video_frame", "input_path": "data\\video01.mp4", "frame_index": 5, "timestamp_s": 0.2, "fps": 103.126, "tools": [{"contour_index": 0, "track_id": 1, "tip": [367, 80], "center": [420, 33], "bounding_box": [367, 2, 112, 79]}]}
+...
 ```
 
 ## GUI Overview
