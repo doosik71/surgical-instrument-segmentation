@@ -10,7 +10,7 @@ import numpy as np
 from app.config.settings import AppSettings
 from app.domain.models import FrameInput, ImageFolderBatch, MediaKind, ProcessedFrame
 from app.services.geometry import resize_with_padding
-from app.services.segmentation.monai_segmenter import MonaiToolSegmenter
+from app.services.segmentation import MonaiToolSegmenter, Segmenter
 
 
 SUPPORTED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
@@ -22,7 +22,7 @@ class ImagePipeline:
     def __init__(
         self,
         settings: AppSettings,
-        segmenter: MonaiToolSegmenter | None = None,
+        segmenter: Segmenter | None = None,
     ) -> None:
         self.settings = settings
         self.segmenter = segmenter or MonaiToolSegmenter(settings)

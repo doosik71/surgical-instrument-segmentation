@@ -1,8 +1,7 @@
-"""MONAI segmentation service backed by a local GPU model."""
+"""PyTorch MONAI segmentation service backed by a local GPU model."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -12,16 +11,7 @@ from app.config.settings import AppSettings
 from app.domain.models import FrameResult
 from app.services.geometry import extract_tool_geometries_from_mask
 from app.services.runtime.device import get_device_status
-
-
-@dataclass(slots=True)
-class LoadedModelInfo:
-    """Metadata about the loaded MONAI model."""
-
-    repo_id: str
-    filename: str
-    device: str
-    weights_path: Path
+from app.services.segmentation.base import LoadedModelInfo
 
 
 class MonaiToolSegmenter:
@@ -30,12 +20,14 @@ class MonaiToolSegmenter:
     def __init__(
         self,
         settings: AppSettings,
+        model_path: Path | None = None,
         input_size: tuple[int, int] = (480, 736),
         mask_threshold: float = 0.5,
         min_component_area: int = 400,
         min_contour_area: int = 400,
     ) -> None:
         self.settings = settings
+        self.model_path = model_path or settings.local_model_path
         self.device_status = get_device_status(require_gpu=settings.require_gpu)
         self.input_size = input_size
         self.mask_threshold = mask_threshold
@@ -53,7 +45,7 @@ class MonaiToolSegmenter:
         if not self.device_status.ready:
             raise RuntimeError(self.device_status.reason or "GPU runtime is not ready")
 
-        model_path = self.settings.local_model_path
+        model_path = self.model_path
         if not model_path.exists():
             raise FileNotFoundError(f"Local model file not found: {model_path}")
 
@@ -89,8 +81,9 @@ class MonaiToolSegmenter:
         self.model = model
         self._pil_image_cls = Image
         self.model_info = LoadedModelInfo(
+            runtime="pt",
             repo_id=self.settings.model_repo_id,
-            filename=self.settings.model_filename,
+            filename=model_path.name,
             device=self.device_status.device_label,
             weights_path=model_path,
         )

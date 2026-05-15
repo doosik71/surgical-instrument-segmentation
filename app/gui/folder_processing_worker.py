@@ -8,6 +8,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 from app.config.settings import AppSettings
 from app.pipelines import ImagePipeline
+from app.services.segmentation import ModelRuntime, MonaiToolSegmenter, Segmenter, TensorRTToolSegmenter
 
 
 class FolderProcessingWorker(QObject):
@@ -17,12 +18,26 @@ class FolderProcessingWorker(QObject):
     failed = pyqtSignal(str)
     finished = pyqtSignal(int, bool)
 
-    def __init__(self, settings: AppSettings, image_paths: list[Path], start_index: int = 0) -> None:
+    def __init__(
+        self,
+        settings: AppSettings,
+        image_paths: list[Path],
+        runtime: ModelRuntime,
+        model_path: Path,
+        start_index: int = 0,
+    ) -> None:
         super().__init__()
         self.settings = settings
         self.image_paths = image_paths
+        self.runtime = runtime
+        self.model_path = model_path
         self.start_index = max(0, min(start_index, max(0, len(image_paths) - 1)))
         self._stop_requested = False
+
+    def _build_segmenter(self) -> Segmenter:
+        if self.runtime == ModelRuntime.TENSORRT:
+            return TensorRTToolSegmenter(settings=self.settings, engine_path=self.model_path)
+        return MonaiToolSegmenter(settings=self.settings, model_path=self.model_path)
 
     def request_stop(self) -> None:
         """Request that processing stop after the current image finishes."""
@@ -34,7 +49,7 @@ class FolderProcessingWorker(QObject):
         stopped = False
 
         try:
-            pipeline = ImagePipeline(settings=self.settings)
+            pipeline = ImagePipeline(settings=self.settings, segmenter=self._build_segmenter())
             total = len(self.image_paths)
 
             for index in range(self.start_index, total):

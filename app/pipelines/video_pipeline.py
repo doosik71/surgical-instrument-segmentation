@@ -10,7 +10,7 @@ import cv2
 from app.config.settings import AppSettings
 from app.domain.models import FrameInput, MediaKind, ProcessedFrame, VideoStreamInfo
 from app.services.geometry import resize_with_padding
-from app.services.segmentation.monai_segmenter import MonaiToolSegmenter
+from app.services.segmentation import MonaiToolSegmenter, Segmenter
 from app.services.tracking import SimpleToolTracker
 
 
@@ -20,7 +20,7 @@ class VideoPipelineSession:
 
     stream_info: VideoStreamInfo
     capture: cv2.VideoCapture
-    segmenter: MonaiToolSegmenter
+    segmenter: Segmenter
     tracker: SimpleToolTracker
     current_frame_index: int = 0
     closed: bool = False
@@ -92,7 +92,7 @@ class VideoPipeline:
     def __init__(
         self,
         settings: AppSettings,
-        segmenter: MonaiToolSegmenter | None = None,
+        segmenter: Segmenter | None = None,
         tracker: SimpleToolTracker | None = None,
     ) -> None:
         self.settings = settings

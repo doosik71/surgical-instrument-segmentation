@@ -8,6 +8,7 @@ from time import perf_counter
 from PyQt6.QtCore import Qt, QThread, QTimer
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtWidgets import (
+    QComboBox,
     QFileDialog,
     QGroupBox,
     QHBoxLayout,
@@ -29,7 +30,7 @@ from app.gui.folder_processing_worker import FolderProcessingWorker
 from app.pipelines import ImagePipeline, VideoPipeline, VideoPipelineSession
 from app.services.rendering import OverlayRenderer
 from app.services.runtime.device import DeviceStatus, get_device_status
-from app.services.segmentation.monai_segmenter import MonaiToolSegmenter
+from app.services.segmentation import ModelOption, ModelRuntime, MonaiToolSegmenter, Segmenter, TensorRTToolSegmenter
 from app.services.tracking import SimpleToolTracker
 
 
@@ -41,15 +42,14 @@ class MainWindow(QMainWindow):
         self.settings = settings
         self.device_status = get_device_status(require_gpu=settings.require_gpu)
 
-        self.segmenter = MonaiToolSegmenter(settings=settings)
-        self.image_pipeline = ImagePipeline(settings=settings, segmenter=self.segmenter)
+        self.segmenter: Segmenter | None = None
+        self.image_pipeline: ImagePipeline | None = None
         self.video_tracker = SimpleToolTracker()
-        self.video_pipeline = VideoPipeline(
-            settings=settings,
-            segmenter=self.segmenter,
-            tracker=self.video_tracker,
-        )
+        self.video_pipeline: VideoPipeline | None = None
         self.overlay_renderer = OverlayRenderer()
+        self.model_options: list[ModelOption] = []
+        self.selected_model_option: ModelOption | None = None
+        self._switching_model = False
 
         self.folder_image_paths: list[Path] = []
         self.current_folder_index = -1
@@ -70,6 +70,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{settings.app_name} {settings.app_version}")
         self.resize(1480, 920)
         self._build_ui()
+        self._initialize_model_selection()
 
     def _build_ui(self) -> None:
         central = QWidget(self)
@@ -99,7 +100,19 @@ class MainWindow(QMainWindow):
         if self.device_status.gpu_name:
             layout.addWidget(QLabel(f"GPU: {self.device_status.gpu_name}"))
         layout.addWidget(QLabel(f"GPU required: {self.settings.require_gpu}"))
-        layout.addWidget(QLabel(f"Local model: {self.settings.local_model_path}"))
+
+        layout.addWidget(QLabel("Model"))
+        self.model_selector = QComboBox()
+        self.model_selector.currentIndexChanged.connect(self._on_model_selection_changed)
+        layout.addWidget(self.model_selector)
+
+        self.model_path_label = QLabel("Path: -")
+        self.model_path_label.setWordWrap(True)
+        layout.addWidget(self.model_path_label)
+
+        self.model_status_label = QLabel("Status: no model detected")
+        self.model_status_label.setWordWrap(True)
+        layout.addWidget(self.model_status_label)
         return box
 
     def _build_mode_tabs(self) -> QTabWidget:
@@ -141,8 +154,8 @@ class MainWindow(QMainWindow):
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
-        open_video_button = QPushButton("Open Video")
-        open_video_button.clicked.connect(self._open_video)
+        self.open_video_button = QPushButton("Open Video")
+        self.open_video_button.clicked.connect(self._open_video)
         self.play_button = QPushButton("Play")
         self.play_button.clicked.connect(self._start_video_playback)
         self.pause_button = QPushButton("Pause")
@@ -150,7 +163,7 @@ class MainWindow(QMainWindow):
         self.next_frame_button = QPushButton("Next Frame")
         self.next_frame_button.clicked.connect(self._step_video_frame)
 
-        layout.addWidget(open_video_button)
+        layout.addWidget(self.open_video_button)
         layout.addWidget(self.play_button)
         layout.addWidget(self.pause_button)
         layout.addWidget(self.next_frame_button)
@@ -215,6 +228,9 @@ class MainWindow(QMainWindow):
         return box
 
     def _open_image(self) -> None:
+        if self.image_pipeline is None:
+            QMessageBox.warning(self, "Model Required", "Select a valid model before opening an image.")
+            return
         if self.folder_processing_active:
             QMessageBox.information(self, "Folder Processing", "Stop the current folder processing first.")
             return
@@ -239,6 +255,9 @@ class MainWindow(QMainWindow):
             self._show_error("Failed to process image", error)
 
     def _open_folder(self) -> None:
+        if self.image_pipeline is None:
+            QMessageBox.warning(self, "Model Required", "Select a valid model before opening a folder.")
+            return
         if self.folder_processing_active:
             QMessageBox.information(self, "Folder Processing", "Stop the current folder processing first.")
             return
@@ -270,6 +289,9 @@ class MainWindow(QMainWindow):
         self.folder_list.setCurrentRow(0)
 
     def _open_video(self) -> None:
+        if self.video_pipeline is None:
+            QMessageBox.warning(self, "Model Required", "Select a valid model before opening a video.")
+            return
         if self.folder_processing_active:
             QMessageBox.information(self, "Folder Processing", "Stop the current folder processing first.")
             return
@@ -290,6 +312,7 @@ class MainWindow(QMainWindow):
         self._set_folder_controls_enabled(False)
 
         try:
+            assert self.video_pipeline is not None
             self.video_session = self.video_pipeline.open(path)
             self._set_video_controls_enabled(True)
             self._configure_video_slider()
@@ -320,10 +343,15 @@ class MainWindow(QMainWindow):
 
         self._stop_video_session()
         start_index = self.current_folder_index if self.current_folder_index >= 0 else 0
+        if self.selected_model_option is None:
+            QMessageBox.warning(self, "Model Required", "Select a valid model before processing a folder.")
+            return
         self.folder_processing_thread = QThread(self)
         self.folder_processing_worker = FolderProcessingWorker(
             settings=self.settings,
             image_paths=self.folder_image_paths,
+            runtime=self.selected_model_option.runtime,
+            model_path=self.selected_model_option.path,
             start_index=start_index,
         )
         self.folder_processing_worker.moveToThread(self.folder_processing_thread)
@@ -436,6 +464,8 @@ class MainWindow(QMainWindow):
         self._sync_video_slider_to_current_frame()
 
     def _process_and_display_image(self, image_path: Path) -> None:
+        if self.image_pipeline is None:
+            raise RuntimeError("No active image pipeline. Select a valid model first.")
         self.current_video_processing_fps = None
         processed_frame = self.image_pipeline.process_image(image_path)
         self._display_processed_frame(processed_frame, trajectories=None)
@@ -471,6 +501,8 @@ class MainWindow(QMainWindow):
         frame = processed_frame.frame
         result = processed_frame.result
         lines = [
+            f"Model runtime: {self.selected_model_option.runtime.value if self.selected_model_option else '-'}",
+            f"Model path: {self.selected_model_option.path if self.selected_model_option else '-'}",
             f"Source: {frame.source_path}",
             f"Kind: {frame.kind}",
             f"Frame index: {frame.frame_index}",
@@ -509,23 +541,26 @@ class MainWindow(QMainWindow):
         self.info_text.setPlainText("\n".join(lines))
 
     def _set_folder_controls_enabled(self, enabled: bool) -> None:
-        self.open_image_button.setEnabled(True)
-        self.open_folder_button.setEnabled(True)
-        self.prev_image_button.setEnabled(enabled)
-        self.next_image_button.setEnabled(enabled)
-        self.process_all_button.setEnabled(enabled)
-        self.folder_list.setEnabled(enabled)
+        base_enabled = enabled and self.image_pipeline is not None
+        self.open_image_button.setEnabled(self.image_pipeline is not None)
+        self.open_folder_button.setEnabled(self.image_pipeline is not None)
+        self.prev_image_button.setEnabled(base_enabled)
+        self.next_image_button.setEnabled(base_enabled)
+        self.process_all_button.setEnabled(base_enabled)
+        self.folder_list.setEnabled(base_enabled)
 
     def _set_folder_processing_running_state(self, running: bool) -> None:
-        self.open_image_button.setEnabled(not running)
-        self.open_folder_button.setEnabled(not running)
-        self.prev_image_button.setEnabled(not running and bool(self.folder_image_paths))
-        self.next_image_button.setEnabled(not running and bool(self.folder_image_paths))
-        self.process_all_button.setEnabled(not running and bool(self.folder_image_paths))
+        model_ready = self.image_pipeline is not None
+        self.open_image_button.setEnabled(not running and model_ready)
+        self.open_folder_button.setEnabled(not running and model_ready)
+        self.prev_image_button.setEnabled(not running and model_ready and bool(self.folder_image_paths))
+        self.next_image_button.setEnabled(not running and model_ready and bool(self.folder_image_paths))
+        self.process_all_button.setEnabled(not running and model_ready and bool(self.folder_image_paths))
         self.folder_list.setEnabled(not running)
         self.stop_process_button.setEnabled(running)
 
     def _set_video_controls_enabled(self, enabled: bool) -> None:
+        self.open_video_button.setEnabled(self.video_pipeline is not None)
         self.play_button.setEnabled(enabled)
         self.pause_button.setEnabled(enabled)
         self.next_frame_button.setEnabled(enabled)
@@ -626,3 +661,171 @@ class MainWindow(QMainWindow):
             self.folder_processing_thread.wait()
         self._stop_video_session()
         event.accept()
+
+    def _initialize_model_selection(self) -> None:
+        self.model_options = self._discover_model_options()
+        self.model_selector.blockSignals(True)
+        self.model_selector.clear()
+        for option in self.model_options:
+            self.model_selector.addItem(option.label)
+
+        if not self.model_options:
+            self.model_selector.blockSignals(False)
+            self.selected_model_option = None
+            self.model_path_label.setText("Path: no model detected")
+            self.model_status_label.setText(
+                "Status: none of model.pt, model-fp32.trt, model-fp16.trt, or model-int8.trt was found"
+            )
+            self._clear_current_media_view()
+            self._set_folder_controls_enabled(False)
+            self._set_video_controls_enabled(False)
+            return
+
+        self.model_selector.setCurrentIndex(0)
+        self.model_selector.blockSignals(False)
+        self._activate_model_option(self.model_options[0], restart_media=False)
+
+    def _discover_model_options(self) -> list[ModelOption]:
+        options: list[ModelOption] = []
+        if self.settings.local_model_path.exists():
+            options.append(ModelOption(runtime=ModelRuntime.PYTORCH, path=self.settings.local_model_path))
+        trt_paths = [
+            self.settings.local_trt_fp32_model_path,
+            self.settings.local_trt_fp16_model_path,
+            self.settings.local_trt_int8_model_path,
+        ]
+        for trt_path in trt_paths:
+            if trt_path.exists():
+                options.append(ModelOption(runtime=ModelRuntime.TENSORRT, path=trt_path))
+        return options
+
+    def _build_segmenter_for_option(self, option: ModelOption) -> Segmenter:
+        if option.runtime == ModelRuntime.TENSORRT:
+            return TensorRTToolSegmenter(settings=self.settings, engine_path=option.path)
+        return MonaiToolSegmenter(settings=self.settings, model_path=option.path)
+
+    def _on_model_selection_changed(self, index: int) -> None:
+        if self._switching_model or index < 0 or index >= len(self.model_options):
+            return
+        option = self.model_options[index]
+        try:
+            self._switching_model = True
+            self._activate_model_option(option, restart_media=True)
+        except Exception as error:
+            self.model_status_label.setText(f"Status: failed to load model ({error})")
+            self._show_error("Failed to switch model", error)
+            if self.selected_model_option is not None:
+                previous_index = self.model_options.index(self.selected_model_option)
+                self.model_selector.blockSignals(True)
+                self.model_selector.setCurrentIndex(previous_index)
+                self.model_selector.blockSignals(False)
+        finally:
+            self._switching_model = False
+
+    def _activate_model_option(self, option: ModelOption, restart_media: bool) -> None:
+        previous_video_path: Path | None = None
+        previous_video_frame = 0
+        previous_video_playing = False
+        previous_image_path: Path | None = None
+        previous_folder_row = self.current_folder_index
+
+        if restart_media:
+            previous_video_path, previous_video_frame, previous_video_playing = self._capture_video_restart_state()
+            previous_image_path = self._capture_image_restart_state()
+            self._stop_folder_processing_blocking()
+            self._stop_video_session()
+
+        segmenter = self._build_segmenter_for_option(option)
+        model_info = segmenter.load()
+        self.segmenter = segmenter
+        self.image_pipeline = ImagePipeline(settings=self.settings, segmenter=segmenter)
+        self.video_pipeline = VideoPipeline(settings=self.settings, segmenter=segmenter, tracker=self.video_tracker)
+        self.selected_model_option = option
+
+        self.model_path_label.setText(f"Path: {option.path}")
+        self.model_status_label.setText(f"Status: loaded {model_info.runtime} on {model_info.device}")
+        self._set_folder_controls_enabled(bool(self.folder_image_paths))
+        self._set_video_controls_enabled(False)
+        self.statusBar().showMessage(f"Active model: {option.path.name} ({option.runtime.value})")
+
+        if restart_media:
+            self._restart_media_after_model_change(
+                previous_video_path=previous_video_path,
+                previous_video_frame=previous_video_frame,
+                previous_video_playing=previous_video_playing,
+                previous_image_path=previous_image_path,
+                previous_folder_row=previous_folder_row,
+            )
+
+    def _capture_video_restart_state(self) -> tuple[Path | None, int, bool]:
+        if self.video_session is None:
+            return None, 0, False
+        return (
+            self.video_session.stream_info.source_path,
+            self.current_video_display_index,
+            self.playback_timer.isActive(),
+        )
+
+    def _capture_image_restart_state(self) -> Path | None:
+        if self.folder_image_paths:
+            return None
+        if self.current_processed_frame is None:
+            return None
+        if self.current_processed_frame.frame.kind.value.startswith("image"):
+            return self.current_processed_frame.frame.source_path
+        return None
+
+    def _stop_folder_processing_blocking(self) -> None:
+        if self.folder_processing_thread is None:
+            return
+        self._request_stop_folder_processing()
+        self.folder_processing_thread.wait()
+
+    def _restart_media_after_model_change(
+        self,
+        previous_video_path: Path | None,
+        previous_video_frame: int,
+        previous_video_playing: bool,
+        previous_image_path: Path | None,
+        previous_folder_row: int,
+    ) -> None:
+        if previous_video_path is not None:
+            self._reopen_video_after_model_change(previous_video_path, previous_video_frame, previous_video_playing)
+            return
+        if self.folder_image_paths and 0 <= previous_folder_row < len(self.folder_image_paths):
+            self.current_folder_index = previous_folder_row
+            if self.folder_list.currentRow() != previous_folder_row:
+                self.folder_list.setCurrentRow(previous_folder_row)
+            else:
+                self._process_and_display_image(self.folder_image_paths[previous_folder_row])
+            return
+        if previous_image_path is not None:
+            self._process_and_display_image(previous_image_path)
+            return
+        self._clear_current_media_view()
+
+    def _reopen_video_after_model_change(self, video_path: Path, frame_index: int, was_playing: bool) -> None:
+        if self.video_pipeline is None:
+            return
+        self.video_session = self.video_pipeline.open(video_path)
+        self._set_video_controls_enabled(True)
+        self._configure_video_slider()
+        if self.video_session.stream_info.fps > 0:
+            self.last_video_interval_ms = max(1, int(1000 / self.video_session.stream_info.fps))
+        else:
+            self.last_video_interval_ms = 33
+
+        target_frame = min(frame_index, max(0, self.video_session.stream_info.frame_count - 1))
+        if target_frame > 0:
+            self.video_session.seek(target_frame)
+        self.current_video_display_index = target_frame
+        self._play_next_video_frame()
+        if was_playing:
+            self.playback_timer.start(self.last_video_interval_ms)
+
+    def _clear_current_media_view(self) -> None:
+        self.current_processed_frame = None
+        self.current_video_processing_fps = None
+        self.viewer_label.clear()
+        self.viewer_label.setText("Load an image, folder, or video to begin.")
+        self.info_text.clear()

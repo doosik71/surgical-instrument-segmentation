@@ -30,6 +30,7 @@ The project uses the `MONAI/endoscopic_tool_segmentation` model on GPU and provi
 - NVIDIA GPU with CUDA support
 - `uv` installed and available on `PATH`
 - Hugging Face token stored in `.env`
+- TensorRT is optional, but required for `.trt` export and TensorRT speed comparison
 
 ## Project Layout
 
@@ -46,6 +47,8 @@ data/
   model/
 install.bat
 run-app.bat
+run-convert.bat
+run-speed.bat
 pyproject.toml
 ```
 
@@ -73,12 +76,53 @@ install.bat
 - downloads the MONAI model
 - verifies CUDA availability in PyTorch
 
+## TensorRT Installation
+
+TensorRT is not installed by `install.bat`. Install it manually if you want to:
+
+- convert `model.onnx` to TensorRT engines
+- compare PyTorch `.pt` inference against TensorRT `.trt` engines
+
+### Windows install notes
+
+1. Download the Windows x64 TensorRT package that matches your installed CUDA major line.
+2. Extract it to a stable location such as `C:\TensorRT-10.16.1.11`.
+3. Make sure `trtexec.exe` is available in one of these ways:
+   - add the TensorRT `bin` directory to `PATH`
+   - set `TRTEXEC_PATH` to the full `trtexec.exe` path
+   - pass `--trtexec` directly to `scripts.convert_to_tensorrt`
+
+### Version matching is important
+
+The TensorRT engine file is version-sensitive.
+
+- The `trtexec.exe` version used to build the `.trt` engines
+- and the Python `tensorrt` package version used to load those `.trt` engines
+
+must match closely, ideally exactly.
+
+If they do not match, TensorRT engine deserialization will fail during speed comparison.
+
+Example:
+
+- build with `C:\TensorRT-10.16.1.11\bin\trtexec.exe`
+- run comparison in a Python environment with `tensorrt 10.16.1.11`
+
 ## Model Location
 
 The application loads the model from:
 
 ```text
 data/model/models/model.pt
+```
+
+Related conversion outputs use:
+
+```text
+data/model/models/model.onnx
+data/model/models/model-fp32.trt
+data/model/models/model-fp16.trt
+data/model/models/model-int8.trt
 ```
 
 The download step is implemented in [app/scripts/download_models.py](./app/scripts/download_models.py).
@@ -90,6 +134,123 @@ run-app.bat
 ```
 
 This launches the PyQt6 application through [app/main.py](./app/main.py).
+
+## Model Conversion And Benchmarking
+
+### Generate ONNX and TensorRT models in one run
+
+```bat
+run-convert.bat
+```
+
+This script does the following:
+
+- creates `data/model/models/model.onnx` from `data/model/models/model.pt` if the ONNX file does not already exist
+- creates `data/model/models/model-fp32.trt` if it does not already exist
+- creates `data/model/models/model-fp16.trt` if it does not already exist
+- creates `data/model/models/model-int8.trt` if it does not already exist
+- skips any output file that already exists
+
+Internally it uses:
+
+- `scripts.convert_to_onnx`
+- `scripts.convert_to_tensorrt`
+
+### Export the MONAI PyTorch model to ONNX manually
+
+```bat
+.\.venv\Scripts\python.exe -m scripts.convert_to_onnx
+```
+
+This converts:
+
+```text
+data/model/models/model.pt
+```
+
+to:
+
+```text
+data/model/models/model.onnx
+```
+
+Useful options:
+
+- `--output`
+- `--input-height`
+- `--input-width`
+- `--opset`
+
+### Export the ONNX model to TensorRT manually
+
+```bat
+.\.venv\Scripts\python.exe -m scripts.convert_to_tensorrt
+```
+
+This converts:
+
+```text
+data/model/models/model.onnx
+```
+
+to:
+
+```text
+data/model/models/model-fp32.trt
+```
+
+Useful options:
+
+- `--trtexec C:\TensorRT-10.16.1.11\bin\trtexec.exe`
+- `--fp16`
+- `--int8`
+- `--min-batch 1 --opt-batch 1 --max-batch 1`
+- `--workspace 4096`
+
+Example:
+
+```bat
+.\.venv\Scripts\python.exe -m scripts.convert_to_tensorrt --trtexec C:\TensorRT-10.16.1.11\bin\trtexec.exe --fp16
+```
+
+This example writes an FP16 engine. To create all three TensorRT engines in one run, prefer `run-convert.bat`.
+
+### Compare PyTorch and TensorRT inference speed
+
+```bat
+run-speed.bat
+```
+
+or:
+
+```bat
+.\.venv\Scripts\python.exe -m scripts.compare_speed
+```
+
+This compares:
+
+- `data/model/models/model.pt`
+- `data/model/models/model-fp32.trt`
+- `data/model/models/model-fp16.trt`
+- `data/model/models/model-int8.trt`
+
+using the same CUDA input tensor and prints:
+
+- output shape
+- max and mean absolute output difference
+- latency per batch
+- latency per image
+- throughput in images per second
+
+Useful options:
+
+- `--batch-size 1`
+- `--warmup 20`
+- `--iterations 100`
+- `--trt-fp32-path data/model/models/model-fp32.trt`
+- `--trt-fp16-path data/model/models/model-fp16.trt`
+- `--trt-int8-path data/model/models/model-int8.trt`
+- `--skip-accuracy-check`
 
 ## GUI Overview
 
@@ -230,6 +391,30 @@ You can re-run:
 ```bat
 install.bat
 ```
+
+### ONNX export fails on import errors
+
+If ONNX import fails during `scripts.convert_to_onnx`, the Python environment likely has an incompatible `onnx` dependency set.
+
+Re-sync the environment:
+
+```bat
+uv sync --extra dev
+```
+
+Then try:
+
+```bat
+.\.venv\Scripts\python.exe -m scripts.convert_to_onnx
+```
+
+### TensorRT engine cannot be loaded
+
+If `scripts.compare_speed` reports that the TensorRT engine cannot be deserialized:
+
+- rebuild the affected `.trt` engine file
+- make sure the `trtexec.exe` version matches the installed Python `tensorrt` runtime version
+- verify the engine was built on a compatible NVIDIA GPU / TensorRT setup
 
 ### GUI freezes during very heavy processing
 

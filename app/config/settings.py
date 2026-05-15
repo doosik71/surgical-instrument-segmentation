@@ -20,6 +20,9 @@ class AppSettings:
     model_dir: Path = Path(__file__).resolve().parents[2] / "data" / "model"
     model_repo_id: str = "MONAI/endoscopic_tool_segmentation"
     model_filename: str = "models/model.pt"
+    trt_model_filename: str = "models/model-fp32.trt"
+    trt_fp16_model_filename: str = "models/model-fp16.trt"
+    trt_int8_model_filename: str = "models/model-int8.trt"
     huggingface_token: str | None = None
     require_gpu: bool = True
 
@@ -27,6 +30,26 @@ class AppSettings:
     def local_model_path(self) -> Path:
         """Return the expected local path for the downloaded model file."""
         return self.model_dir / Path(self.model_filename)
+
+    @property
+    def local_trt_model_path(self) -> Path:
+        """Return the expected local path for the default TensorRT engine."""
+        return self.model_dir / Path(self.trt_model_filename)
+
+    @property
+    def local_trt_fp32_model_path(self) -> Path:
+        """Return the expected local path for the FP32 TensorRT engine."""
+        return self.model_dir / Path(self.trt_model_filename)
+
+    @property
+    def local_trt_fp16_model_path(self) -> Path:
+        """Return the expected local path for the FP16 TensorRT engine."""
+        return self.model_dir / Path(self.trt_fp16_model_filename)
+
+    @property
+    def local_trt_int8_model_path(self) -> Path:
+        """Return the expected local path for the INT8 TensorRT engine."""
+        return self.model_dir / Path(self.trt_int8_model_filename)
 
     @classmethod
     def from_env(cls) -> "AppSettings":
