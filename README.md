@@ -135,6 +135,90 @@ run-app.bat
 
 This launches the PyQt6 application through [app/main.py](./app/main.py).
 
+## Docker
+
+Use Docker when you want to run the project in the CUDA 12 / Ubuntu 24.04 / ROS Jazzy container defined by [Dockerfile](./Dockerfile) and [compose.yaml](./compose.yaml).
+
+### Prerequisites
+
+- Docker Engine or Docker Desktop with WSL2 integration
+- NVIDIA driver visible from WSL/Linux:
+
+```bash
+nvidia-smi
+```
+
+- NVIDIA Container Toolkit configured for Docker. If needed, run:
+
+```bash
+./install-nvidia-toolkit.sh
+sudo systemctl restart docker
+```
+
+### Build the Docker image
+
+With Docker Compose:
+
+```bash
+docker compose build app
+```
+
+Or with plain Docker:
+
+```bash
+docker build -t surgical-instrument-segmentation:jazzy-cuda12 .
+```
+
+### Run the container
+
+Start an interactive container through Docker Compose:
+
+```bash
+docker compose run --rm app
+```
+
+Run the GUI application from the container:
+
+```bash
+docker compose run --rm app ./run-app.sh
+```
+
+If the bind-mounted workspace does not already contain `.venv` or downloaded model files, run the project installer once inside the container:
+
+```bash
+docker compose run --rm app ./install.sh
+```
+
+### Log in to a shell
+
+Create a new one-off shell:
+
+```bash
+docker compose run --rm app bash
+```
+
+Or start the service in the background and attach a shell to it:
+
+```bash
+docker compose up -d app
+docker compose exec app bash
+```
+
+### Activate the environment
+
+Interactive Bash shells in the image load ROS and the project virtual environment from `/root/.bashrc` when `.venv` exists. To activate them manually:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source /workspace/.venv/bin/activate
+```
+
+Verify CUDA visibility from inside the container:
+
+```bash
+python -c "import torch; print('cuda_available', torch.cuda.is_available()); print('device_count', torch.cuda.device_count())"
+```
+
 ## Model Conversion And Benchmarking
 
 ### Generate ONNX and TensorRT models in one run

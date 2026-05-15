@@ -14,9 +14,12 @@ htmlcov/
 .vscode/
 dist/
 build/
+install/
+log/
 
 /.env
 /data
 /old-code
 
 git_commit_message.txt
+.codex
