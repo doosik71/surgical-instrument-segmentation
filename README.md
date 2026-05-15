@@ -252,6 +252,23 @@ Useful options:
 - `--trt-int8-path data/model/models/model-int8.trt`
 - `--skip-accuracy-check`
 
+Example benchmark result:
+
+```text
+engine            output_shape        max_abs_diff  mean_abs_diff
+--------------------------------------------------------------------
+tensorrt_fp32     (1, 2, 480, 736)        0.036263       0.003089
+tensorrt_fp16     (1, 2, 480, 736)        0.220657       0.021721
+tensorrt_int8     (1, 2, 480, 736)       14.720551       3.403430
+
+benchmark           ms/batch    ms/image    images/s
+------------------------------------------------------
+pytorch_pt             8.360       8.360      119.62
+tensorrt_fp32          4.815       4.815      207.67
+tensorrt_fp16          2.991       2.991      334.30
+tensorrt_int8          2.238       2.238      446.83
+```
+
 ## GUI Overview
 
 ### Still Images tab
